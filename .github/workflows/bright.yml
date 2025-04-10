@@ -1,0 +1,63 @@
+name: Security Tests
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      SPRING_DATASOURCE_PASSWORD: 19649072Sever
+      SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/testeccomerce?useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      BRIGHT_TARGET_URL: http://127.0.0.1:8080
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    - name: Set up Node.js 22
+      uses: actions/setup-node@v3
+      with:
+        node-version: '22'
+
+    - name: Install Maven dependencies
+      run: ./mvnw dependency:resolve
+
+    - name: Install SecTester dependencies
+      working-directory: .brightsec
+      run: npm install --save=false @sectester/core @sectester/repeater @sectester/scan @sectester/runner
+
+    - name: Start Spring Boot application
+      run: |
+        nohup ./mvnw spring-boot:run &
+        until nc -zv 127.0.0.1 8080; do sleep 1; done
+
+    - name: Run security tests
+      env:
+        BRIGHT_HOSTNAME: ${{ vars.BRIGHT_HOSTNAME }}
+        BRIGHT_PROJECT_ID: ${{ vars.BRIGHT_PROJECT_ID }}
+        BRIGHT_TOKEN: ${{ secrets.BRIGHT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        node --experimental-transform-types \
+             --experimental-strip-types \
+             --experimental-detect-module \
+             --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+             --disable-warning=ExperimentalWarning \
+             --test-force-exit \
+             --test .brightsec/tests/*.test.ts \
+             --test-concurrency=4
